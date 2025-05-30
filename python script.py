@@ -1,46 +1,56 @@
 import serial
-import time
-from collections import deque
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+from collections import deque
 
-# Configurație port serial (modifică după caz)
-SERIAL_PORT = 'COM3'       # sau '/dev/ttyUSB0' pe Linux
+# === CONFIG ===
+SERIAL_PORT = 'COM6' 
 BAUD_RATE = 115200
+WINDOW_SIZE = 100
 
-# Inițializează buffer pentru grafic
-BUFFER_SIZE = 100
-data_buffer = deque([0]*BUFFER_SIZE, maxlen=BUFFER_SIZE)
+# === INITIALIZARE ===
+ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
 
-# Inițializează graficul
-fig, ax = plt.subplots()
-line, = ax.plot([], [], lw=2)
-ax.set_ylim(0, 4095)   # ADC pe 12 biți
-ax.set_xlim(0, BUFFER_SIZE)
-ax.set_title("Semnal de la ESP32")
-ax.set_ylabel("Valoare ADC")
-ax.set_xlabel("Timp (ultimele N puncte)")
+d1_vals = deque([0]*WINDOW_SIZE, maxlen=WINDOW_SIZE)
+d2_vals = deque([0]*WINDOW_SIZE, maxlen=WINDOW_SIZE)
+avg_vals = deque([0]*WINDOW_SIZE, maxlen=WINDOW_SIZE)
 
-def update_plot(frame):
-    global ser
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))  
+
+# === PLOTLINES ===
+line1, = ax1.plot([], [], label='Dioda 1')
+line2, = ax1.plot([], [], label='Dioda 2')
+line_avg, = ax2.plot([], [], label='Average', color='purple')
+
+ax1.set_title('Diode Raw')
+ax1.set_ylim(-1500, 1500)
+ax1.set_xlim(0, WINDOW_SIZE)
+ax1.legend()
+
+ax2.set_title('Average')
+ax2.set_ylim(-1500, 1500)
+ax2.set_xlim(0, WINDOW_SIZE)
+ax2.legend()
+
+def update(frame):
     try:
-        line_raw = ser.readline().decode().strip()
-        if line_raw.startswith("CH"):
-            val = float(line_raw.split(":")[1])
-            data_buffer.append(val)
-            line.set_data(range(len(data_buffer)), list(data_buffer))
+        line = ser.readline().decode().strip()
+        parts = line.split()
+        if len(parts) == 3:
+            v1, v2, avg = map(int, parts)
+            d1_vals.append(v1)
+            d2_vals.append(v2)
+            avg_vals.append(avg)
+
+            line1.set_data(range(len(d1_vals)), list(d1_vals))
+            line2.set_data(range(len(d2_vals)), list(d2_vals))
+            line_avg.set_data(range(len(avg_vals)), list(avg_vals))
+
     except:
         pass
-    return line,
+    return line1, line2, line_avg
 
-# Deschide conexiunea serială
-ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-time.sleep(2)  # Așteaptă pornirea ESP-ului
+ani = animation.FuncAnimation(fig, update, interval=10, blit=True)
 
-# Pornește animația
-ani = animation.FuncAnimation(fig, update_plot, interval=50)
 plt.tight_layout()
 plt.show()
-
-# Închide portul serial când se termină
-ser.close()
